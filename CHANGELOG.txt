@@ -1,0 +1,4 @@
+GetFinancing module for DrupalCommerce 2.x with Drupal 7.x., 2016-02-08
+------------------------------------------------------------------
+First public release
+
