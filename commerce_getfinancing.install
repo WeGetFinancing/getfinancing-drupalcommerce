@@ -1,0 +1,52 @@
+<?php
+
+/**
+ * @file
+ * Installs the tables required by Get Financing.
+ */
+
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_getfinancing_schema() {
+  $schema = array();
+
+  $schema['commerce_getfinancing'] = array(
+    'description' => 'Stores processed Orders',
+    'fields' => array(
+      'order_id' => array(
+        'description' => 'The order ID the payment belongs to.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'merchant_loan_id' => array(
+        'description' => 'The merchant_loan_id code of the payment.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'created' => array(
+        'description' => 'The Unix timestamp when the request was received.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('merchant_loan_id'),
+    'foreign keys' => array(
+      'order_id' => array(
+        'table' => 'commerce_order',
+        'columns'=> array('order_id' => 'order_id'),
+      ),
+    ),
+    'indexes' => array(
+      'merchant_loan_id' => array('merchant_loan_id'),
+    ),
+  );
+
+  return $schema;
+}
