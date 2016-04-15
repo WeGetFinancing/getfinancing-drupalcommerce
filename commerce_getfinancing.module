@@ -103,8 +103,14 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
 
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
 
-  $merchant_loan_id = md5(time() . $payment_method['settings']['merchant_id'] .$billing_address['first_name'] .$order_wrapper->commerce_order_total->amount->value());
-  $merchant_loan_id = $order->order_id;
+ 
+
+  $billing_address = $order_wrapper->commerce_customer_billing->commerce_customer_address->value();
+  $state_code = commerce_getfinancing_get_state_name($billing_address['administrative_area'], $billing_address['country']);
+
+   $merchant_loan_id = md5(time() . $payment_method['settings']['merchant_id'] .$billing_address['first_name'] .$order_wrapper->commerce_order_total->amount->value());
+  //$merchant_loan_id = $order->order_id;
+   commerce_getfinancing_save_order_id($merchant_loan_id,$order->order_id);
     // Shipping.
     $shipping_amount=0;
     foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
@@ -114,32 +120,45 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
       }
     }
 
-  $billing_address = $order_wrapper->commerce_customer_billing->commerce_customer_address->value();
-  $state_code = commerce_getfinancing_get_state_name($billing_address['administrative_area'], $billing_address['country']);
+  $product_info="";
+  foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
+    if (in_array($line_item_wrapper->type->value(), commerce_product_line_item_types())) {
+      $product_id = $line_item_wrapper->commerce_product->product_id->value();
+      $product = commerce_product_load($product_id);
+      $price = commerce_product_calculate_sell_price($product);
+      $product_info[] = $product->title . " (" . $line_item_wrapper->quantity->value() . ")";
+      $cart_items[]=json_encode(array("display_name" => $product->title,"quantity" => $line_item_wrapper->quantity->value(),"unit_price" => number_format($price['amount']/100,2,'.','')));
+      // Item descriptions.
+    }
+  }
 
   $gf_data = array(
-      'amount'           => $order_wrapper->commerce_order_total->amount->value() / 100,
-      'product_info'     => $order->order_id,
+      'amount'           => number_format($order_wrapper->commerce_order_total->amount->value() / 100,2,'.',''),
+      //'cart_items'     => implode(',',$cart_items),
+      'product_info'     => implode(',',$product_info),
       'first_name'       => $billing_address['first_name'],
       'last_name'        => $billing_address['last_name'],
       'shipping_address' => array(
           'street1'  => $billing_address['thoroughfare'],
           'city'    => $billing_address['locality'],
-          'state'   => $state_code,
+          'state'   => $billing_address['administrative_area'],
           'zipcode' => $billing_address['postal_code']
       ),
       'billing_address' => array(
           'street1'  => $billing_address['thoroughfare'],
           'city'    => $billing_address['locality'],
-          'state'   => $state_code,
+          'state'   => $billing_address['administrative_area'],
           'zipcode' => $billing_address['postal_code']
       ),
       'version'          => '1.9',
-      'shipping_amount'  => $shipping_amount,
+      'shipping_amount'  => number_format($shipping_amount/100,2,'.',''),
       'email'            => drupal_substr($order->mail, 0, 255),
       'merchant_loan_id' => $merchant_loan_id
   );
-   $body_json_data = json_encode($gf_data);
+
+
+
+   $body_json_data =json_encode($gf_data,JSON_UNESCAPED_SLASHES);
    $header_auth = base64_encode( $payment_method['settings']['username'] . ":" . $payment_method['settings']['password']);
 
     $post_args = array(
@@ -159,7 +178,8 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
         $url = 'https://api.getfinancing.com/merchant/' . $payment_method['settings']['merchant_id'] . '/requests';
     }
     
-    $gf_response = _remote_post( $url, $post_args );
+    $gf_response = commerce_getfinancing_remote_post( $url, $post_args );
+
     $gf_response = json_decode($gf_response);
 
       $args = array(
@@ -167,7 +187,7 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
   );
 
   $ok_url = url('cart/getfinancing/order_complete', array('absolute' => TRUE, 'query' => $args));
-
+  $nok_url = check_url(url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)));
 
   drupal_add_js('https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js', 'external');
   drupal_add_js('https://cdn.getfinancing.com/libs/1.0/getfinancing.js', 'external');
@@ -179,7 +199,7 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
               };
 
               var onAbort = function() {
-                  window.location.href="checkout/$order->order_id/payment/back/$redirect";
+                  window.location.href="$nok_url";
               };
 
                setTimeout(function(){
@@ -200,8 +220,11 @@ function commerce_getfinancing_complete() {
 
   $notification = json_decode($json, TRUE);
   if (isset($notification['updates']['status']) && $notification['updates']['status'] == 'approved') {
-    $order_id = $notification['merchant_transaction_id'];
-    $order = commerce_order_load($order_id);
+
+    $merchant_transaction_id = $notification['merchant_transaction_id'];
+
+    $order_id = commerce_getfinancing_get_order_id($merchant_transaction_id);
+    $order = commerce_order_load($order_id['order_id']);
     $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
     $transaction = commerce_payment_transaction_new('getfinancing', $order->order_id);
     $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
@@ -271,7 +294,7 @@ function commerce_getfinancing_get_state_name($state_code, $country_code = NULL)
   }
 }
 
-function _remote_post($url,$args=array()) {
+function commerce_getfinancing_remote_post($url,$args=array()) {
     $curl = curl_init();
 
     curl_setopt($curl, CURLOPT_URL, $url);
@@ -307,4 +330,47 @@ function _remote_post($url,$args=array()) {
     } else {
       return $resp;
     }
+}
+
+
+/**
+ * Convert marchantg loan id to order_id
+ *
+ * @param $merchant_loan_id
+ *   The merchant_loan_id of the request
+ *
+ * @return
+ *   The original order_id to start processing.
+ */
+function commerce_getfinancing_get_order_id($merchant_loan_id) {
+  return db_select('commerce_getfinancing', 'order_id')
+    ->fields('order_id')
+    ->condition('merchant_loan_id', $merchant_loan_id,'=')
+    ->execute()
+    ->fetchAssoc();
+}
+
+/**
+ * Saves an IPN with some meta data related to local processing.
+ *
+ * @param $ipn
+ *   An IPN array with additional parameters for the order_id and Commerce
+ *     Payment transaction_id associated with the IPN.
+ *
+ * @return
+ *   The operation performed by drupal_write_record() on save; since the IPN is
+ *     received by reference, it will also contain the serial numeric ipn_id
+ *     used locally.
+ */
+function commerce_getfinancing_save_order_id($merchant_loan_id,$order_id) {
+  if (!empty($merchant_loan_id) && !empty($order_id)) {
+    $gf['created'] = REQUEST_TIME;
+    $gf['merchant_loan_id'] = $merchant_loan_id;
+    $gf['order_id'] = $order_id;
+
+    return drupal_write_record('commerce_getfinancing', $gf);
+  }else{
+    return false;
+  }
+
 }
