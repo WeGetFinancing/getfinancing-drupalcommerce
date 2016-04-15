@@ -170,7 +170,7 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
 
 
   drupal_add_js('https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js', 'external');
-  drupal_add_js('https://partner.getfinancing.com/libs/1.0/getfinancing.js', 'external');
+  drupal_add_js('https://cdn.getfinancing.com/libs/1.0/getfinancing.js', 'external');
   $redirect=$order->data['payment_redirect_key'];
      $inlineJS = <<<EOT
                   var onComplete = function() {
