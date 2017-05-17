@@ -121,21 +121,29 @@ function commerce_getfinancing_redirect_form($form, &$form_state, $order, $payme
     }
 
   $product_info="";
+  $cart_items = array();
   foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
     if (in_array($line_item_wrapper->type->value(), commerce_product_line_item_types())) {
       $product_id = $line_item_wrapper->commerce_product->product_id->value();
       $product = commerce_product_load($product_id);
       $price = commerce_product_calculate_sell_price($product);
       $product_info[] = $product->title . " (" . $line_item_wrapper->quantity->value() . ")";
-      $cart_items[]=json_encode(array("display_name" => $product->title,"quantity" => $line_item_wrapper->quantity->value(),"unit_price" => number_format($price['amount']/100,2,'.','')));
+      //$cart_items[]=json_encode(array("display_name" => $product->title,"quantity" => $line_item_wrapper->quantity->value(),"unit_price" => number_format($price['amount']/100,2,'.','')));
       // Item descriptions.
+        $cart_items[] = array(
+                'sku' => $product->sku,
+                'display_name' => $product->title,
+                'unit_price' => number_format($price['amount']/100,2,'.',''),
+                'quantity' => (int)$line_item_wrapper->quantity->value(),
+                'unit_tax' => 0
+             );
     }
   }
 
   $gf_data = array(
       'amount'           => number_format($order_wrapper->commerce_order_total->amount->value() / 100,2,'.',''),
-      //'cart_items'     => implode(',',$cart_items),
-      'product_info'     => implode(',',$product_info),
+      'cart_items'     => $cart_items,
+      //'product_info'     => implode(',',$product_info),
       'first_name'       => $billing_address['first_name'],
       'last_name'        => $billing_address['last_name'],
       'shipping_address' => array(
